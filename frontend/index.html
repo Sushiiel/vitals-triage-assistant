@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>VITALS — Live Environmental Early-Warning</title>
+<style>
+  :root {
+    --bg:#070a12; --panel:#0e1322; --panel2:#121a2e; --line:#1d2640;
+    --txt:#e2e8f4; --dim:#8b96b3; --acc:#818cf8; --acc2:#34d399;
+    --bad:#f87171; --warn:#fbbf24; --r:14px;
+  }
+  * { box-sizing:border-box; margin:0; }
+  body { background:radial-gradient(1400px 600px at 70% -10%, #1e1b4b66, transparent),
+                    radial-gradient(900px 500px at -10% 30%, #312e8133, transparent), var(--bg);
+         color:var(--txt); font:14px/1.6 ui-sans-serif,-apple-system,'Segoe UI',Inter,Roboto,sans-serif;
+         min-height:100vh; }
+  code, pre, textarea, .mono { font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace; }
+  header { padding:30px 32px 20px; max-width:1280px; margin:0 auto;
+           display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .crumb { display:inline-flex; align-items:center; gap:8px; font-size:11px; letter-spacing:1.4px;
+           text-transform:uppercase; color:var(--acc); background:#818cf81a; border:1px solid #818cf833;
+           padding:5px 12px; border-radius:999px; margin-bottom:12px; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--acc2); animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  h1 { font-size:26px; font-weight:800; letter-spacing:-.4px;
+       background:linear-gradient(90deg,#e2e8f4,#a5b4fc); -webkit-background-clip:text;
+       background-clip:text; -webkit-text-fill-color:transparent; }
+  .sub { color:var(--dim); margin-top:6px; font-size:13px; }
+  .sub a { color:var(--acc); text-decoration:none; }
+  .conn { display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:700;
+          letter-spacing:1px; text-transform:uppercase; padding:7px 14px; border-radius:999px;
+          border:1px solid var(--line); color:var(--dim); background:#0a0f1cbb; white-space:nowrap; }
+  .conn .cdot { width:8px; height:8px; border-radius:50%; background:#64748b; }
+  .conn.live { color:var(--acc2); border-color:#34d39944; }
+  .conn.live .cdot { background:var(--acc2); animation:pulse 1.4s infinite; }
+  .conn.poll { color:var(--warn); border-color:#fbbf2444; }
+  .conn.poll .cdot { background:var(--warn); animation:pulse 1.4s infinite; }
+  main { max-width:1280px; margin:0 auto; padding:0 32px 48px; display:flex;
+         flex-direction:column; gap:18px; }
+  .card { background:linear-gradient(180deg,var(--panel2),var(--panel)); border:1px solid var(--line);
+          border-radius:var(--r); padding:18px; }
+  label, .lbl { display:block; font-size:10.5px; color:var(--dim); text-transform:uppercase;
+          letter-spacing:1.1px; margin:0 0 10px; font-weight:600; }
+  /* KPI tiles */
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:14px; }
+  .kpi { background:linear-gradient(180deg,var(--panel2),var(--panel)); border:1px solid var(--line);
+         border-radius:var(--r); padding:16px 18px; position:relative; overflow:hidden; }
+  .kpi::after { content:''; position:absolute; inset:0; border-radius:var(--r);
+                background:linear-gradient(120deg, #818cf81f, transparent 60%);
+                opacity:0; transition:opacity .5s; pointer-events:none; }
+  .kpi.flash::after { opacity:1; transition:none; }
+  .kpi .k-label { font-size:10.5px; color:var(--dim); text-transform:uppercase; letter-spacing:1.1px;
+                  font-weight:600; }
+  .kpi .k-value { font-size:24px; font-weight:800; letter-spacing:-.4px; margin-top:6px;
+                  font-variant-numeric:tabular-nums; transition:color .3s; }
+  .kpi.flash .k-value { color:#a5b4fc; }
+  /* charts */
+  .charts { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:18px; }
+  .chart-card canvas { width:100%; height:180px; display:block; }
+  .chart-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .chart-last { font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
+  /* feed + console row */
+  .split { display:grid; grid-template-columns:1.2fr .8fr; gap:18px; align-items:start; }
+  @media (max-width:980px){ .split { grid-template-columns:1fr; } }
+  .feed { max-height:430px; overflow-y:auto; scrollbar-width:thin; display:flex;
+          flex-direction:column; gap:8px; padding-right:4px; }
+  .ev { display:flex; gap:10px; align-items:flex-start; padding:9px 12px; border:1px solid var(--line);
+        border-left:3px solid #64748b; border-radius:9px; background:#0a0f1c88; font-size:12.5px;
+        animation:slide .35s ease; }
+  @keyframes slide { from { opacity:0; transform:translateY(-6px); } to { opacity:1; } }
+  .ev .edot { width:8px; height:8px; border-radius:50%; margin-top:6px; flex:none; background:#64748b; }
+  .ev.ok       { border-left-color:#34d39988; } .ev.ok .edot { background:var(--acc2); }
+  .ev.warn     { border-left-color:#fbbf2488; } .ev.warn .edot { background:var(--warn); }
+  .ev.critical { border-left-color:#f8717188; } .ev.critical .edot { background:var(--bad); }
+  .ev .etxt { flex:1; min-width:0; }
+  .ev .esum { word-break:break-word; }
+  .ev .etime { color:var(--dim); font-size:11px; white-space:nowrap; margin-top:5px; }
+  .ev .esev { font-size:9.5px; font-weight:800; letter-spacing:.8px; text-transform:uppercase;
+              padding:2px 7px; border-radius:5px; margin-top:3px; }
+  .ev.ok .esev { background:#34d39922; color:var(--acc2); }
+  .ev.warn .esev { background:#fbbf2422; color:var(--warn); }
+  .ev.critical .esev { background:#f8717122; color:var(--bad); }
+  /* collapsible API console */
+  details.console > summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:10px;
+            font-size:10.5px; color:var(--dim); text-transform:uppercase; letter-spacing:1.1px; font-weight:600; }
+  details.console > summary::-webkit-details-marker { display:none; }
+  details.console > summary .chev { transition:transform .2s; font-size:12px; color:var(--acc); }
+  details.console[open] > summary .chev { transform:rotate(90deg); }
+  .console-body { margin-top:14px; }
+  .eps { display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
+  .ep { display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--line);
+        border-radius:9px; cursor:pointer; transition:all .15s; background:transparent; color:var(--txt);
+        font:inherit; text-align:left; width:100%; }
+  .ep:hover { border-color:#818cf866; transform:translateY(-1px); }
+  .ep.active { border-color:var(--acc); background:#818cf812; box-shadow:0 0 0 1px #818cf844; }
+  .method { font-size:10px; font-weight:800; letter-spacing:.6px; padding:3px 8px; border-radius:6px; }
+  .m-get { background:#34d39922; color:var(--acc2); }
+  .m-post { background:#818cf822; color:var(--acc); }
+  .path { font-size:12.5px; }
+  textarea { width:100%; min-height:110px; resize:vertical; background:#0a0f1c; color:var(--txt);
+             border:1px solid var(--line); border-radius:9px; padding:12px; font-size:12.5px;
+             line-height:1.55; outline:none; }
+  textarea:focus { border-color:#818cf877; }
+  .send { margin-top:12px; width:100%; padding:11px; border:0; border-radius:9px; cursor:pointer;
+          font:inherit; font-weight:700; color:#fff; letter-spacing:.2px;
+          background:linear-gradient(90deg,#6366f1,#8b5cf6); transition:filter .15s, transform .1s; }
+  .send:hover { filter:brightness(1.12); }
+  .send:active { transform:scale(.985); }
+  .send:disabled { opacity:.55; cursor:wait; }
+  pre.out { background:#0a0f1c; border:1px solid var(--line); border-radius:9px; padding:14px;
+            white-space:pre-wrap; word-break:break-word; min-height:120px; max-height:240px;
+            overflow-y:auto; font-size:12px; line-height:1.55; margin-top:12px; }
+  .hint { color:var(--dim); font-size:11.5px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="crumb"><span class="dot"></span> Predictive Analytics · Real-Time Monitoring · real-time</div>
+    <h1>VITALS — Live Environmental Early-Warning</h1>
+    <div class="sub">Live operations dashboard · OpenAPI docs at <a href="/docs">/docs</a> · health at <a href="/health">/health</a></div>
+  </div>
+  <div class="conn" id="conn"><span class="cdot"></span><span id="conn-text">connecting…</span></div>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="charts" id="charts"></div>
+  <div class="split">
+    <section class="card">
+      <span class="lbl" id="feed-title">Live events</span>
+      <div class="feed" id="feed"></div>
+    </section>
+    <section class="card">
+      <details class="console" open>
+        <summary><span class="chev">▶</span> API console</summary>
+        <div class="console-body">
+          <div class="eps" id="eps"></div>
+          <label>Request body — JSON</label>
+          <textarea id="body" spellcheck="false"></textarea>
+          <button class="send" id="send">Send request</button>
+          <pre class="out" id="out">Pick an endpoint and hit send.</pre>
+          <p class="hint">Presets are the blueprint's smoke-test cases — edit freely and resend.</p>
+        </div>
+      </details>
+    </section>
+  </div>
+</main>
+<script>
+const DASH = {"kpis": [{"key": "stations_monitored", "label": "Stations monitored", "format": "int"}, {"key": "critical_alerts", "label": "Critical alerts", "format": "int"}, {"key": "avg_score", "label": "Avg risk score", "format": "float"}, {"key": "deteriorating", "label": "Deteriorating now", "format": "int"}, {"key": "mean_time_to_alert_ms", "label": "Mean time to alert", "format": "ms"}], "charts": [{"key": "alert_rate", "label": "Critical alert rate (%)", "color": "#f87171"}, {"key": "avg_score", "label": "Avg risk score (rolling)", "color": "#818cf8"}], "feed": {"title": "Live station monitor", "fields": ["summary"]}};
+const SMOKE = [
+  {
+    "method": "post",
+    "path": "/api/reading",
+    "json": {
+      "station": "TestCity",
+      "temp": 42.0,
+      "feels": 46.0,
+      "humidity": 88,
+      "wind": 65.0,
+      "pressure": 982.0,
+      "source": "manual"
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/reading",
+    "json": {
+      "station": "ArcticBase",
+      "temp": -12.0,
+      "feels": -18.0,
+      "humidity": 92,
+      "wind": 95.0,
+      "pressure": 968.0,
+      "source": "manual"
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/alert-queue"
+  }
+];
+const MAXPTS = 60, FEED_MAX = 40, POLL_MS = 1500;
+let seq = 0, lastKpis = {}, series = {}, feedItems = [], pollTimer = null, sock = null;
+
+/* ------------------------------------------------------------- formatting */
+function fmt(v, f) {
+  if (v === null || v === undefined) return '—';
+  if (typeof v !== 'number') return String(v);
+  if (f === 'int') return Math.round(v).toLocaleString();
+  if (f === 'pct') return v.toFixed(1) + '%';
+  if (f === 'ms') return v.toFixed(1) + ' ms';
+  if (f === 'money') return '$' + Math.round(v).toLocaleString();
+  if (f === 'float') return (Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2));
+  return String(v);
+}
+function rel(ts) {
+  if (!ts) return '';
+  const d = Date.now() / 1000 - ts;
+  if (d < 2) return 'now';
+  if (d < 60) return Math.round(d) + 's ago';
+  if (d < 3600) return Math.round(d / 60) + 'm ago';
+  return Math.round(d / 3600) + 'h ago';
+}
+
+/* -------------------------------------------------------------- KPI tiles */
+const kpisEl = document.getElementById('kpis');
+DASH.kpis.forEach(k => {
+  const t = document.createElement('div');
+  t.className = 'kpi'; t.id = 'kpi-' + k.key;
+  t.innerHTML = '<div class="k-label">' + k.label + '</div><div class="k-value">—</div>';
+  kpisEl.appendChild(t);
+});
+function updateKpis(kp) {
+  DASH.kpis.forEach(k => {
+    const tile = document.getElementById('kpi-' + k.key);
+    if (!tile) return;
+    const v = kp[k.key];
+    const txt = fmt(v, k.format);
+    const el = tile.querySelector('.k-value');
+    if (el.textContent !== txt) {
+      el.textContent = txt;
+      tile.classList.remove('flash'); void tile.offsetWidth; tile.classList.add('flash');
+      setTimeout(() => tile.classList.remove('flash'), 600);
+    }
+  });
+  lastKpis = kp;
+}
+
+/* ----------------------------------------------------------------- charts */
+const chartsEl = document.getElementById('charts');
+const chartRefs = {};
+DASH.charts.forEach(c => {
+  const card = document.createElement('section');
+  card.className = 'card chart-card';
+  card.innerHTML = '<div class="chart-head"><span class="lbl" style="margin:0">' + c.label +
+    '</span><span class="chart-last" style="color:' + c.color + '" id="last-' + c.key + '">—</span></div>' +
+    '<canvas id="chart-' + c.key + '"></canvas>';
+  chartsEl.appendChild(card);
+  chartRefs[c.key] = { canvas: card.querySelector('canvas'), color: c.color };
+});
+function drawChart(ref, pts) {
+  const cv = ref.canvas, dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  if (cv.width !== w * dpr || cv.height !== h * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!pts || pts.length < 2) return;
+  let mn = Math.min(...pts), mx = Math.max(...pts);
+  if (mn === mx) { mn -= 1; mx += 1; }
+  const pad = (mx - mn) * 0.15; mn -= pad; mx += pad;
+  const X = i => 6 + (w - 12) * i / (pts.length - 1);
+  const Y = v => h - 8 - (h - 20) * (v - mn) / (mx - mn);
+  ctx.strokeStyle = '#1d264066'; ctx.lineWidth = 1;
+  for (let g = 1; g <= 3; g++) {
+    const gy = 8 + (h - 24) * g / 4;
+    ctx.beginPath(); ctx.moveTo(4, gy); ctx.lineTo(w - 4, gy); ctx.stroke();
+  }
+  // smooth path through midpoints (quadratic segments)
+  ctx.beginPath(); ctx.moveTo(X(0), Y(pts[0]));
+  for (let i = 1; i < pts.length - 1; i++) {
+    ctx.quadraticCurveTo(X(i), Y(pts[i]), (X(i) + X(i + 1)) / 2, (Y(pts[i]) + Y(pts[i + 1])) / 2);
+  }
+  ctx.lineTo(X(pts.length - 1), Y(pts[pts.length - 1]));
+  ctx.strokeStyle = ref.color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+  // gradient fill under the line
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, ref.color + '33'); grad.addColorStop(1, ref.color + '00');
+  ctx.lineTo(X(pts.length - 1), h); ctx.lineTo(X(0), h); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+  // last-point marker
+  ctx.beginPath(); ctx.arc(X(pts.length - 1), Y(pts[pts.length - 1]), 3, 0, 7);
+  ctx.fillStyle = ref.color; ctx.fill();
+}
+function updateSeries(s) {
+  DASH.charts.forEach(c => {
+    if (s[c.key]) series[c.key] = s[c.key].slice(-MAXPTS);
+  });
+}
+function renderCharts() {
+  DASH.charts.forEach(c => {
+    const pts = series[c.key] || [];
+    drawChart(chartRefs[c.key], pts);
+    const last = document.getElementById('last-' + c.key);
+    if (last && pts.length) last.textContent = fmt(pts[pts.length - 1], 'float');
+  });
+}
+window.addEventListener('resize', renderCharts);
+
+/* ------------------------------------------------------------------ feed */
+document.getElementById('feed-title').textContent = (DASH.feed && DASH.feed.title) || 'Live events';
+const feedEl = document.getElementById('feed');
+function addFeed(e) {
+  feedItems.unshift(e);
+  if (feedItems.length > FEED_MAX) feedItems.length = FEED_MAX;
+}
+function renderFeed() {
+  feedEl.innerHTML = '';
+  feedItems.forEach(e => {
+    const div = document.createElement('div');
+    div.className = 'ev ' + (e.severity || 'ok');
+    div.innerHTML = '<span class="edot"></span><div class="etxt"><div class="esum">' +
+      String(e.summary || JSON.stringify(e)).replace(/&/g, '&amp;').replace(/</g, '&lt;') +
+      '</div></div><div><div class="esev">' + (e.severity || 'ok') +
+      '</div><div class="etime">' + rel(e.ts) + '</div></div>';
+    feedEl.appendChild(div);
+  });
+}
+setInterval(renderFeed, 5000);   // keep relative timestamps fresh
+
+/* ------------------------------------------------ live transport (WS/poll) */
+const connEl = document.getElementById('conn'), connText = document.getElementById('conn-text');
+function setMode(mode) {
+  connEl.className = 'conn ' + (mode === 'websocket' ? 'live' : mode === 'polling' ? 'poll' : '');
+  connText.textContent = mode === 'websocket' ? 'LIVE · websocket'
+                       : mode === 'polling' ? 'LIVE · polling' : 'connecting…';
+}
+function handle(msg) {
+  if (!msg) return;
+  if (typeof msg.seq === 'number') seq = Math.max(seq, msg.seq);
+  (msg.events || []).forEach(e => { if (e.seq === undefined || e.seq > (handle._max || 0)) {
+    addFeed(e); if (e.seq !== undefined) handle._max = e.seq; } });
+  if (msg.kpis) updateKpis(msg.kpis);
+  if (msg.series) updateSeries(msg.series);
+  renderCharts(); renderFeed();
+}
+async function poll() {
+  try {
+    const [ev, kp] = await Promise.all([
+      fetch('/api/live/events?since=' + seq).then(r => r.json()),
+      fetch('/api/live/kpis').then(r => r.json()),
+    ]);
+    handle({ seq: kp.seq, events: ev.events, kpis: kp.kpis, series: kp.series });
+  } catch (_) { /* transient — keep polling */ }
+}
+function startPolling() {
+  if (pollTimer) return;
+  setMode('polling');
+  poll();
+  pollTimer = setInterval(poll, POLL_MS);
+}
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+function connectWS() {
+  let opened = false;
+  try {
+    sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') +
+                         location.host + '/ws/live');
+  } catch (_) { startPolling(); return; }
+  sock.onopen = () => { opened = true; setMode('websocket'); stopPolling(); };
+  sock.onmessage = m => { try { handle(JSON.parse(m.data)); } catch (_) {} };
+  sock.onerror = () => { try { sock.close(); } catch (_) {} };
+  sock.onclose = () => {
+    startPolling();                          // auto-fallback, stays live
+    if (opened) setTimeout(connectWS, 5000); // server restart: try WS again
+  };
+  setTimeout(() => { if (!opened) { try { sock.close(); } catch (_) {} } }, 2500);
+}
+poll();          // first paint immediately, whatever the transport
+connectWS();
+
+/* ----------------------------------------------------------- API console */
+const eps = document.getElementById('eps'), body = document.getElementById('body'),
+      out = document.getElementById('out'), send = document.getElementById('send');
+let active = 0;
+function renderEps() {
+  eps.innerHTML = '';
+  SMOKE.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'ep' + (i === active ? ' active' : '');
+    const m = c.method.toUpperCase();
+    b.innerHTML = '<span class="method ' + (m === 'GET' ? 'm-get' : 'm-post') + '">' + m +
+                  '</span><span class="path mono">' + c.path + '</span>';
+    b.onclick = () => { active = i; renderEps(); load(); };
+    eps.appendChild(b);
+  });
+}
+function load() {
+  const c = SMOKE[active];
+  body.value = c && c.json ? JSON.stringify(c.json, null, 2) : '';
+}
+async function call() {
+  const c = SMOKE[active];
+  send.disabled = true;
+  out.textContent = 'calling ' + c.path + ' …';
+  const t0 = performance.now();
+  try {
+    const opts = { method: c.method.toUpperCase(), headers: {'Content-Type':'application/json'} };
+    if (body.value.trim() && opts.method !== 'GET') opts.body = body.value;
+    const r = await fetch(c.path, opts);
+    const ms = Math.round(performance.now() - t0);
+    const t = await r.text();
+    let pretty; try { pretty = JSON.stringify(JSON.parse(t), null, 2); } catch (_) { pretty = t; }
+    out.textContent = '// ' + r.status + ' · ' + ms + ' ms\n' + pretty;
+  } catch (e) {
+    out.textContent = 'request failed: ' + e;
+  }
+  send.disabled = false;
+}
+send.onclick = call;
+renderEps(); load();
+</script>
+</body>
+</html>
